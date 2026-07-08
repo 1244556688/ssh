@@ -34,13 +34,39 @@ android {
     }
     val keystoreFile = file("${rootDir}/debug.keystore")
     val base64File = file("${rootDir}/debug.keystore.base64")
-    if (!keystoreFile.exists() && base64File.exists()) {
-      try {
-        val base64Content = base64File.readText().replace("\\s".toRegex(), "")
-        val decodedBytes = Base64.getDecoder().decode(base64Content)
-        keystoreFile.writeBytes(decodedBytes)
-      } catch (e: Exception) {
-        logger.warn("Failed to decode debug.keystore.base64: ${e.message}")
+    if (!keystoreFile.exists()) {
+      if (base64File.exists()) {
+        try {
+          val base64Content = base64File.readText().replace("\\s".toRegex(), "")
+          val decodedBytes = Base64.getDecoder().decode(base64Content)
+          keystoreFile.writeBytes(decodedBytes)
+          logger.lifecycle("Successfully decoded debug.keystore from base64")
+        } catch (e: Exception) {
+          logger.warn("Failed to decode debug.keystore.base64: ${e.message}")
+        }
+      } else {
+        try {
+          logger.lifecycle("Generating a new debug.keystore using keytool...")
+          val process = ProcessBuilder(
+            "keytool", "-genkey", "-v",
+            "-keystore", keystoreFile.absolutePath,
+            "-storepass", "android",
+            "-alias", "androiddebugkey",
+            "-keypass", "android",
+            "-keyalg", "RSA",
+            "-keysize", "2048",
+            "-validity", "10000",
+            "-dname", "CN=Android Debug,O=Android,C=US"
+          ).inheritIO().start()
+          val exitCode = process.waitFor()
+          if (exitCode == 0) {
+            logger.lifecycle("Successfully generated a new debug.keystore")
+          } else {
+            logger.warn("keytool exited with code $exitCode")
+          }
+        } catch (e: Exception) {
+          logger.warn("Failed to generate debug.keystore using keytool: ${e.message}")
+        }
       }
     }
 
