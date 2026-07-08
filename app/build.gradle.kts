@@ -116,8 +116,11 @@ abstract class PrepareDebugKeystoreTask : DefaultTask() {
 }
 
 val prepareDebugKeystore = tasks.register<PrepareDebugKeystoreTask>("prepareDebugKeystore") {
-  base64KeystoreFile.set(project.layout.projectDirectory.file("../debug.keystore.base64"))
-  outputKeystoreFile.set(project.layout.projectDirectory.file("../debug.keystore"))
+  val base64File = project.file("${project.rootDir}/debug.keystore.base64")
+  if (base64File.exists()) {
+    base64KeystoreFile.set(base64File)
+  }
+  outputKeystoreFile.set(project.file("${project.rootDir}/debug.keystore"))
 }
 
 tasks.configureEach {
