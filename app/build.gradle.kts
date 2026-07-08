@@ -33,43 +33,6 @@ android {
       keyPassword = System.getenv("KEY_PASSWORD")
     }
     val keystoreFile = file("${rootDir}/debug.keystore")
-    val base64File = file("${rootDir}/debug.keystore.base64")
-    if (!keystoreFile.exists()) {
-      if (base64File.exists()) {
-        try {
-          val base64Content = base64File.readText().replace("\\s".toRegex(), "")
-          val decodedBytes = Base64.getDecoder().decode(base64Content)
-          keystoreFile.writeBytes(decodedBytes)
-          logger.lifecycle("Successfully decoded debug.keystore from base64")
-        } catch (e: Exception) {
-          logger.warn("Failed to decode debug.keystore.base64: ${e.message}")
-        }
-      } else {
-        try {
-          logger.lifecycle("Generating a new debug.keystore using keytool...")
-          val process = ProcessBuilder(
-            "keytool", "-genkey", "-v",
-            "-keystore", keystoreFile.absolutePath,
-            "-storepass", "android",
-            "-alias", "androiddebugkey",
-            "-keypass", "android",
-            "-keyalg", "RSA",
-            "-keysize", "2048",
-            "-validity", "10000",
-            "-dname", "CN=Android Debug,O=Android,C=US"
-          ).inheritIO().start()
-          val exitCode = process.waitFor()
-          if (exitCode == 0) {
-            logger.lifecycle("Successfully generated a new debug.keystore")
-          } else {
-            logger.warn("keytool exited with code $exitCode")
-          }
-        } catch (e: Exception) {
-          logger.warn("Failed to generate debug.keystore using keytool: ${e.message}")
-        }
-      }
-    }
-
     create("debugConfig") {
       storeFile = keystoreFile
       storePassword = "android"
@@ -98,6 +61,69 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+}
+
+abstract class PrepareDebugKeystoreTask : DefaultTask() {
+  @get:InputFile
+  @get:Optional
+  abstract val base64KeystoreFile: RegularFileProperty
+
+  @get:OutputFile
+  abstract val outputKeystoreFile: RegularFileProperty
+
+  @TaskAction
+  fun prepare() {
+    val base64File = base64KeystoreFile.orNull?.asFile
+    val keystoreFile = outputKeystoreFile.get().asFile
+    if (!keystoreFile.exists()) {
+      if (base64File != null && base64File.exists()) {
+        try {
+          val base64Content = base64File.readText().replace("\\s".toRegex(), "")
+          val decodedBytes = Base64.getDecoder().decode(base64Content)
+          keystoreFile.writeBytes(decodedBytes)
+          logger.lifecycle("Successfully decoded debug.keystore from base64 via class task")
+        } catch (e: Exception) {
+          logger.warn("Failed to decode debug.keystore.base64 in class task: ${e.message}")
+        }
+      } else {
+        try {
+          logger.lifecycle("Generating a new debug.keystore using keytool via class task...")
+          val process = ProcessBuilder(
+            "keytool", "-genkey", "-v",
+            "-keystore", keystoreFile.absolutePath,
+            "-storepass", "android",
+            "-alias", "androiddebugkey",
+            "-keypass", "android",
+            "-keyalg", "RSA",
+            "-keysize", "2048",
+            "-validity", "10000",
+            "-dname", "CN=Android Debug,O=Android,C=US"
+          ).inheritIO().start()
+          val exitCode = process.waitFor()
+          if (exitCode == 0) {
+            logger.lifecycle("Successfully generated a new debug.keystore in class task")
+          } else {
+            logger.warn("keytool exited with code $exitCode in class task")
+          }
+        } catch (e: Exception) {
+          logger.warn("Failed to generate debug.keystore using keytool in class task: ${e.message}")
+        }
+      }
+    } else {
+      logger.lifecycle("debug.keystore already exists")
+    }
+  }
+}
+
+val prepareDebugKeystore = tasks.register<PrepareDebugKeystoreTask>("prepareDebugKeystore") {
+  base64KeystoreFile.set(project.layout.projectDirectory.file("../debug.keystore.base64"))
+  outputKeystoreFile.set(project.layout.projectDirectory.file("../debug.keystore"))
+}
+
+tasks.configureEach {
+  if (name.startsWith("preBuild") || name.startsWith("validateSigning") || name.startsWith("package") || name.startsWith("assemble")) {
+    dependsOn(prepareDebugKeystore)
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
